@@ -1,3 +1,7 @@
+# Vale
+.vale/styles/*
+!.vale/styles/config/
+
 # Logs
 logs
 *.log
