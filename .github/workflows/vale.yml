@@ -1,0 +1,97 @@
+name: Airgapped Vale Linter
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prose-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7
+
+      - name: Install Precompiled Vale 3.25.1 Binary
+        run: |
+          curl -fsSL https://github.com/vale-cli/vale/releases/download/v3.25.1/vale_3.25.1_Linux_64-bit.tar.gz -o vale.tar.gz
+          echo "4bf5c5176b682b1da0830f471584d3494f1c2e27ee3029e1ad6f6661d4962182  vale.tar.gz" | sha256sum -c -
+          sudo tar -xzf vale.tar.gz -C /usr/local/bin vale
+          rm -f vale.tar.gz
+          vale --version
+
+      - name: Resolve Configuration (.vale.ini vs. Fallback)
+        run: |
+          mkdir -p /tmp/vale-fallback/styles
+
+         
+          echo "CONF_PATH=.vale.ini" >> "$GITHUB_ENV"
+          vale sync
+        
+
+      - name: Run Vale in Airgapped Network Namespace
+        run: |
+          set +e
+          RUNNER_UID=$(id -u "$USER")
+          RUNNER_GID=$(id -g "$USER")
+
+          VALE_JSON=$(sudo unshare -n -- setpriv \
+            --reuid="$RUNNER_UID" \
+            --regid="$RUNNER_GID" \
+            --init-groups \
+            --inh-caps=-all \
+            --no-new-privs \
+            vale --config="$CONF_PATH" --output=JSON .)
+          VALE_EXIT=$?
+          set -e
+
+          if [ $VALE_EXIT -eq 2 ]; then
+            echo "::error::Vale failed due to a configuration or runtime error."
+            echo "$VALE_JSON"
+            exit 2
+          fi
+
+          # 1. Emit inline PR Annotations (::error, ::warning, ::notice)
+          if [ -n "$VALE_JSON" ] && [ "$VALE_JSON" != "{}" ]; then
+            echo "$VALE_JSON" | jq -r '
+              to_entries[] |
+              .key as $file |
+              .value[] |
+              (if .Severity == "error" then "error" elif .Severity == "warning" then "warning" else "notice" end) as $level |
+              "::\($level) file=\($file),line=\(.Line),col=\(.Span[0]),endColumn=\(.Span[1]),title=\(.Check) (\(.Severity))::\(.Message)"
+            '
+          fi
+
+          # 2. Build Markdown Report in GitHub Step Summary
+          {
+            echo "## Vale Prose Linting Report"
+            if [ -z "$VALE_JSON" ] || [ "$VALE_JSON" = "{}" ]; then
+              echo "✅ **No errors, warnings, or suggestions found.**"
+            else
+              COUNTS=$(echo "$VALE_JSON" | jq -r '
+                [ .[][] ] |
+                "🔴 **Errors:** \(map(select(.Severity=="error")) | length) | " +
+                "🟡 **Warnings:** \(map(select(.Severity=="warning")) | length) | " +
+                "🔵 **Suggestions:** \(map(select(.Severity=="suggestion")) | length)"
+              ')
+              echo "$COUNTS"
+              echo ""
+              echo "| File | Line:Col | Severity | Rule | Message |"
+              echo "| :--- | :--- | :--- | :--- | :--- |"
+              echo "$VALE_JSON" | jq -r '
+                to_entries[] |
+                .key as $file |
+                .value[] |
+                "| `\($file)` | `\(.Line):\(.Span[0])-\(.Span[1])` | **\(.Severity | ascii_upcase)** | `\(.Check)` | \(.Message | gsub("\\|"; "\\|")) |"
+              '
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 3. Fail workflow strictly on Error-level violations (Exit code 1)
+          if [ $VALE_EXIT -ne 0 ]; then
+            echo "::error::Vale detected error-level violations. Failing workflow."
+            exit $VALE_EXIT
+          fi
