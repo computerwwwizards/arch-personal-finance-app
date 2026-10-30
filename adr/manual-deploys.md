@@ -27,7 +27,7 @@ Tying the core provisioning logic directly to external event payloads makes the 
 
 ## Decision Outcome
 
-Chosen option: **"Option 1: Parameterized Manual Pipeline Dispatch Wrapping a Shared Script Contract"**, because it establishes a deterministic, schema-validated execution boundary inside a controlled runner environment. By separating the provisioning script from the manual pipeline trigger, it immediately unblocks on-demand deployments, acts as the exact callable target for future automated triggers, and guarantees a permanent, high-availability fallback path when automated event pipelines fail.
+Chosen option: **"Option 1: Parameterized Manual Pipeline Dispatch Wrapping a Shared Script Contract,"** because it establishes a deterministic, schema-validated execution boundary inside a controlled runner environment. By separating the provisioning script from the manual pipeline trigger, it immediately unblocks on-demand deployments, acts as the exact callable target for future automated triggers, and guarantees a permanent, high-availability fallback path when automated event pipelines fail.
 
 ### Benefits
 
@@ -52,7 +52,7 @@ Compliance with this architecture decision record will be enforced and verified 
 
 ### Option 1: Parameterized Manual Pipeline Dispatch Wrapping a Shared Script Contract
 
-An architectural pattern where a repository-hosted, versioned script encapsulates infrastructure and container orchestration calls, exposed via an explicit manual trigger in the continuous integration and continuous deployment control plane and invocable via authenticated command line or application programming interface calls.
+An architectural pattern where a repository-hosted, versioned script encapsulates infrastructure and container orchestration calls, exposed via an explicit manual trigger in the continuous integration and continuous deployment control plane and able to be called via authenticated command line or application programming interface requests.
 
 * Good, because it satisfies **Trigger-to-Provisioner Decoupling** by forcing the provisioning script to consume standardized environment variables or flags rather than parsing raw webhook payloads.
 * Good, because it satisfies **Baseline Execution Primacy**; subsequent automation options under investigation become pure caller workflows that pass extracted commit hashes into this exact script.
